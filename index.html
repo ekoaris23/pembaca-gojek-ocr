@@ -134,7 +134,6 @@
     // Load Tesseract worker on page load
     const loadWorker = async () => {
         try {
-            // Sintaks untuk Tesseract.js v4 yang benar
             tesseractWorker = await Tesseract.createWorker({
                 logger: m => {
                     if (m.status === 'downloading') {
@@ -186,9 +185,12 @@
             const { data: { text } } = await tesseractWorker.recognize(file);
             
             statusDiv.textContent = 'Pemrosesan selesai. Mengekstrak data...';
-            // Menampilkan teks mentah di konsol untuk debugging
-            console.log("Teks yang dihasilkan dari OCR:", text);
             
+            // Log teks mentah ke konsol untuk debugging
+            console.log("Teks yang dihasilkan dari OCR:", text);
+            // Tampilkan alert dengan teks mentah agar mudah disalin
+            alert("Teks mentah dari gambar:\n\n" + text);
+
             const extractedData = parseGojekText(text);
 
             const dataKeys = Object.keys(extractedData);
@@ -203,7 +205,7 @@
                 const row = document.createElement('tr');
                 row.innerHTML = `<td colspan="2" style="text-align: center;">Tidak ada data yang berhasil ditemukan.</td>`;
                 dataTableBody.appendChild(row);
-                statusDiv.textContent = 'Tidak ada data yang berhasil diekstrak. Silakan coba gambar lain.';
+                statusDiv.textContent = 'Tidak ada data yang berhasil diekstrak. Mohon periksa konsol atau salin teks dari alert untuk dianalisis.';
             }
 
             resultContainer.style.display = 'block';
@@ -221,23 +223,23 @@
     function parseGojekText(text) {
         const data = {};
         
-        // Regular expressions with more flexible patterns
+        // Revised regular expressions for better flexibility
         const idMatch = text.match(/ID\s*Transaksi\s*(RB-\d+-\d+)/i);
-        const tanggalMatch = text.match(/Selesai\s*[\n\r]+(.*?,\s*\d+\s*\w+)/i);
-        const jarakMatch = text.match(/Jarak\s+([\d.]+)\s*km/i);
+        const tanggalMatch = text.match(/(Selesai|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*,\s*(\d+\s*\w+)/i);
+        const jarakMatch = text.match(/Jarak\s+([\d.,]+)\s*km/i);
         const totalPendapatanMatch = text.match(/Total\s+pendapatan\s+mitra\s*(Rp[\d.,]+)/i);
         const pendapatanPelangganMatch = text.match(/Pendapatan\s+dari\s+pelanggan\s*(Rp[\d.,]+)/i);
-        const potonganBiayaMatch = text.match(/Potongan\/biaya\s*(Rp[\d.,]+)/i);
+        const potonganBiayaMatch = text.match(/Potongan\s*\/\s*biaya\s*(Rp[\d.,]+)/i);
         const waktuDitugaskanMatch = text.match(/Ditugaskan\s*[\n\r]+(\d{2}:\d{2})/i);
         const waktuJemputMatch = text.match(/Jemput\s*[\n\r]+(\d{2}:\d{2})/i);
         const waktuSelesaiMatch = text.match(/Selesai\s*[\n\r]+(\d{2}:\d{2})/i);
         
-        // Flexible regex for addresses, looking for text between known labels
+        // Flexible regex for addresses
         const alamatJemputMatch = text.match(/Titik\s+jemput\s*[\n\r]+(.*?)(?=\s*Tujuan)/is);
         const alamatTujuanMatch = text.match(/Tujuan\s*[\n\r]+(.*?)(?=\s*Jarak)/is);
 
         if (idMatch) data['ID Transaksi'] = idMatch[1];
-        if (tanggalMatch) data['Tanggal Selesai'] = tanggalMatch[1].trim();
+        if (tanggalMatch) data['Tanggal Selesai'] = tanggalMatch[1] + ', ' + tanggalMatch[2];
         if (jarakMatch) data['Jarak'] = jarakMatch[1] + ' km';
         if (totalPendapatanMatch) data['Total Pendapatan Mitra'] = totalPendapatanMatch[1];
         if (pendapatanPelangganMatch) data['Pendapatan dari Pelanggan'] = pendapatanPelangganMatch[1];
@@ -246,7 +248,7 @@
         if (waktuJemputMatch) data['Waktu Jemput'] = waktuJemputMatch[1];
         if (waktuSelesaiMatch) data['Waktu Selesai'] = waktuSelesaiMatch[1];
         
-        // Clean up addresses from newlines and extra spaces
+        // Clean up addresses from newlines
         if (alamatJemputMatch) data['Titik Jemput'] = alamatJemputMatch[1].replace(/\n/g, ' ').trim();
         if (alamatTujuanMatch) data['Tujuan'] = alamatTujuanMatch[1].replace(/\n/g, ' ').trim();
         
