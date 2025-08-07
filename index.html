@@ -159,7 +159,19 @@
 
         try {
             const base64ImageData = await fileToBase64(file);
-            const prompt = `Ekstrak semua informasi penting dari tangkapan layar orderan Gojek ini. Pastikan Anda mendapatkan data untuk ID Transaksi, Tanggal Selesai, Waktu Ditugaskan, Waktu Jemput, Waktu Selesai, Jarak, Titik Jemput, Tujuan, Total Pendapatan Mitra, Pendapatan dari pelanggan, dan Potongan/biaya. Berikan hasilnya dalam format JSON yang terstruktur.`;
+            const prompt = `Ekstrak semua informasi penting dari tangkapan layar orderan Gojek ini ke dalam format JSON. Jika data tidak ada, berikan nilai null.
+            Berikut adalah data yang saya butuhkan:
+            - idTransaksi
+            - tanggalSelesai
+            - waktuDitugaskan
+            - waktuJemput
+            - waktuSelesai
+            - jarak
+            - titikJemput
+            - tujuan
+            - totalPendapatan
+            - pendapatanPelanggan
+            - potonganBiaya`;
             
             const payload = {
                 contents: [{
@@ -179,17 +191,17 @@
                     responseSchema: {
                         type: "OBJECT",
                         properties: {
-                            "idTransaksi": { "type": "STRING" },
-                            "tanggalSelesai": { "type": "STRING" },
-                            "waktuDitugaskan": { "type": "STRING" },
-                            "waktuJemput": { "type": "STRING" },
-                            "waktuSelesai": { "type": "STRING" },
-                            "jarak": { "type": "STRING" },
-                            "titikJemput": { "type": "STRING" },
-                            "tujuan": { "type": "STRING" },
-                            "totalPendapatan": { "type": "STRING" },
-                            "pendapatanPelanggan": { "type": "STRING" },
-                            "potonganBiaya": { "type": "STRING" }
+                            "idTransaksi": { "type": "STRING", "nullable": true },
+                            "tanggalSelesai": { "type": "STRING", "nullable": true },
+                            "waktuDitugaskan": { "type": "STRING", "nullable": true },
+                            "waktuJemput": { "type": "STRING", "nullable": true },
+                            "waktuSelesai": { "type": "STRING", "nullable": true },
+                            "jarak": { "type": "STRING", "nullable": true },
+                            "titikJemput": { "type": "STRING", "nullable": true },
+                            "tujuan": { "type": "STRING", "nullable": true },
+                            "totalPendapatan": { "type": "STRING", "nullable": true },
+                            "pendapatanPelanggan": { "type": "STRING", "nullable": true },
+                            "potonganBiaya": { "type": "STRING", "nullable": true }
                         }
                     }
                 }
