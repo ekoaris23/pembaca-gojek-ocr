@@ -133,7 +133,7 @@
         processBtn.disabled = !imageInput.files[0];
     });
 
-    // Helper function to convert file to Base64
+    // Fungsi helper untuk mengonversi file ke format Base64
     function fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -159,7 +159,7 @@
 
         try {
             const base64ImageData = await fileToBase64(file);
-            const prompt = `Ekstrak semua informasi penting dari tangkapan layar orderan Gojek ini ke dalam format JSON. Jika data tidak ada, berikan nilai null.
+            const prompt = `Ekstrak semua informasi penting dari tangkapan layar orderan Gojek ini ke dalam format JSON. Jika data tidak ditemukan, berikan nilai null.
             Berikut adalah data yang saya butuhkan:
             - idTransaksi
             - tanggalSelesai
@@ -169,9 +169,24 @@
             - jarak
             - titikJemput
             - tujuan
-            - totalPendapatan
+            - totalPendapatanMitra
             - pendapatanPelanggan
-            - potonganBiaya`;
+            - potonganBiaya
+            
+            Pastikan format JSON selalu benar dan sesuai dengan struktur di bawah ini:
+            {
+              "idTransaksi": "...",
+              "tanggalSelesai": "...",
+              "waktuDitugaskan": "...",
+              "waktuJemput": "...",
+              "waktuSelesai": "...",
+              "jarak": "...",
+              "titikJemput": "...",
+              "tujuan": "...",
+              "totalPendapatanMitra": "...",
+              "pendapatanPelanggan": "...",
+              "potonganBiaya": "..."
+            }`;
             
             const payload = {
                 contents: [{
@@ -180,92 +195,95 @@
                         { text: prompt },
                         {
                             inlineData: {
-                                mimeType: "image/jpeg",
+                                mimeType: file.type, // Gunakan mimeType dari file yang diunggah
                                 data: base64ImageData
                             }
                         }
                     ]
-                }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            "idTransaksi": { "type": "STRING", "nullable": true },
-                            "tanggalSelesai": { "type": "STRING", "nullable": true },
-                            "waktuDitugaskan": { "type": "STRING", "nullable": true },
-                            "waktuJemput": { "type": "STRING", "nullable": true },
-                            "waktuSelesai": { "type": "STRING", "nullable": true },
-                            "jarak": { "type": "STRING", "nullable": true },
-                            "titikJemput": { "type": "STRING", "nullable": true },
-                            "tujuan": { "type": "STRING", "nullable": true },
-                            "totalPendapatan": { "type": "STRING", "nullable": true },
-                            "pendapatanPelanggan": { "type": "STRING", "nullable": true },
-                            "potonganBiaya": { "type": "STRING", "nullable": true }
-                        }
-                    }
-                }
+                }]
             };
 
             const apiKey = ""; // Disediakan oleh Canvas
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
 
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            // Lakukan panggilan API dengan backoff eksponensial
+            let response = null;
+            let result = null;
+            let retries = 0;
+            const maxRetries = 5;
 
-            const result = await response.json();
-            
-            if (result.candidates && result.candidates.length > 0 &&
-                result.candidates[0].content && result.candidates[0].content.parts &&
-                result.candidates[0].content.parts.length > 0) {
-                
-                const jsonText = result.candidates[0].content.parts[0].text;
-                const extractedData = JSON.parse(jsonText);
+            while (retries < maxRetries) {
+                try {
+                    response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
 
-                // Buat mapping untuk nama yang lebih mudah dibaca di tabel
-                const displayNames = {
-                    idTransaksi: 'ID Transaksi',
-                    tanggalSelesai: 'Tanggal Selesai',
-                    waktuDitugaskan: 'Waktu Ditugaskan',
-                    waktuJemput: 'Waktu Jemput',
-                    waktuSelesai: 'Waktu Selesai',
-                    jarak: 'Jarak',
-                    titikJemput: 'Titik Jemput',
-                    tujuan: 'Tujuan',
-                    totalPendapatan: 'Total Pendapatan Mitra',
-                    pendapatanPelanggan: 'Pendapatan dari Pelanggan',
-                    potonganBiaya: 'Potongan/Biaya'
-                };
-
-                let dataFound = false;
-                for (const key in extractedData) {
-                    if (extractedData[key]) {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `<td>${displayNames[key] || key}</td><td>${extractedData[key]}</td>`;
-                        dataTableBody.appendChild(row);
-                        dataFound = true;
+                    if (response.status === 429) {
+                        retries++;
+                        const delay = Math.pow(2, retries) * 1000;
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
                     }
-                }
 
-                if (dataFound) {
-                    statusDiv.textContent = 'Data berhasil diekstrak!';
-                } else {
+                    result = await response.json();
+                    break;
+                } catch (error) {
+                    throw error;
+                }
+            }
+
+            if (!result || !result.candidates || result.candidates.length === 0 ||
+                !result.candidates[0].content || !result.candidates[0].content.parts ||
+                result.candidates[0].content.parts.length === 0) {
+                throw new Error("Respons dari Gemini tidak valid.");
+            }
+
+            // Dapatkan teks JSON dari respons
+            const jsonText = result.candidates[0].content.parts[0].text;
+            
+            // Perbaiki respons jika Gemini menyertakan '```json' atau '```'
+            const cleanedJsonText = jsonText.replace(/^```json\n|\n```$/g, '').trim();
+
+            const extractedData = JSON.parse(cleanedJsonText);
+
+            // Buat mapping untuk nama yang lebih mudah dibaca di tabel
+            const displayNames = {
+                idTransaksi: 'ID Transaksi',
+                tanggalSelesai: 'Tanggal Selesai',
+                waktuDitugaskan: 'Waktu Ditugaskan',
+                waktuJemput: 'Waktu Jemput',
+                waktuSelesai: 'Waktu Selesai',
+                jarak: 'Jarak',
+                titikJemput: 'Titik Jemput',
+                tujuan: 'Tujuan',
+                totalPendapatanMitra: 'Total Pendapatan Mitra',
+                pendapatanPelanggan: 'Pendapatan dari Pelanggan',
+                potonganBiaya: 'Potongan/Biaya'
+            };
+
+            let dataFound = false;
+            for (const key in extractedData) {
+                if (extractedData[key]) {
                     const row = document.createElement('tr');
-                    row.innerHTML = `<td colspan="2" style="text-align: center;">Tidak ada data yang berhasil ditemukan.</td>`;
+                    row.innerHTML = `<td>${displayNames[key] || key}</td><td>${extractedData[key]}</td>`;
                     dataTableBody.appendChild(row);
-                    statusDiv.textContent = 'Tidak ada data yang berhasil diekstrak. Mohon coba gambar lain.';
+                    dataFound = true;
                 }
-                
-                resultContainer.style.display = 'block';
+            }
 
+            if (dataFound) {
+                statusDiv.textContent = 'Data berhasil diekstrak!';
             } else {
-                statusDiv.textContent = 'Gagal mengekstrak data. Respons dari Gemini tidak valid.';
-                statusDiv.classList.add('error');
+                const row = document.createElement('tr');
+                row.innerHTML = `<td colspan="2" style="text-align: center;">Tidak ada data yang berhasil ditemukan.</td>`;
+                dataTableBody.appendChild(row);
+                statusDiv.textContent = 'Tidak ada data yang berhasil diekstrak. Mohon coba gambar lain.';
             }
             
+            resultContainer.style.display = 'block';
+
         } catch (error) {
             statusDiv.textContent = `Terjadi kesalahan saat memproses gambar: ${error.message}`;
             statusDiv.classList.add('error');
