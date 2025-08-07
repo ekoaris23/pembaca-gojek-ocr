@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pembaca Orderan Gojek</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        input[type="file"] {
+            display: block;
+            margin: 20px auto;
+        }
+        button {
+            background-color: #008000;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #006400;
+        }
+        .loading {
+            margin-top: 20px;
+            color: #666;
+            font-style: italic;
+        }
+        #result-container {
+            margin-top: 30px;
+            text-align: left;
+            border-top: 1px solid #ccc;
+            padding-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Pembaca Orderan Gojek</h1>
+    <p>Unggah tangkapan layar orderan Gojek Anda untuk memprosesnya menjadi data tabel.</p>
+    
+    <input type="file" id="imageInput" accept="image/*">
+    <button onclick="processImage()">Proses Gambar</button>
+    
+    <div id="status" class="loading"></div>
+    
+    <div id="result-container" style="display: none;">
+        <h3>Hasil:</h3>
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th>Informasi</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                </tbody>
+        </table>
+        
+        <div style="margin-top: 20px;">
+            <h4>Teks Mentah (untuk referensi):</h4>
+            <pre id="rawText"></pre>
+        </div>
+    </div>
+</div>
+
+<script src='https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js'></script>
+<script>
+    const imageInput = document.getElementById('imageInput');
+    const statusDiv = document.getElementById('status');
+    const resultContainer = document.getElementById('result-container');
+    const dataTableBody = document.querySelector('#dataTable tbody');
+    const rawTextPre = document.getElementById('rawText');
+
+    async function processImage() {
+        const file = imageInput.files[0];
+        if (!file) {
+            statusDiv.textContent = 'Silakan pilih gambar terlebih dahulu.';
+            statusDiv.classList.add('error');
+            return;
+        }
+        
+        // Sembunyikan hasil sebelumnya
+        resultContainer.style.display = 'none';
+        dataTableBody.innerHTML = '';
+        rawTextPre.textContent = '';
+        statusDiv.classList.remove('error');
+        statusDiv.textContent = 'Memproses... Ini mungkin memakan waktu beberapa detik.';
+
+        try {
+            const { data: { text } } = await Tesseract.recognize(
+                file,
+                'ind+eng', // Membaca bahasa Indonesia dan Inggris
+                { 
+                    logger: m => {
+                        // Tampilkan progres
+                        if (m.status === 'recognizing text') {
+                            statusDiv.textContent = `Memproses: ${Math.round(m.progress * 100)}%`;
+                        }
+                    }
+                }
+            );
+
+            statusDiv.textContent = 'Pemrosesan selesai. Mengekstrak data...';
+
+            // Menampilkan teks mentah
+            rawTextPre.textContent = text;
+            
+            // --- Bagian Paling Penting: Parsing Teks ---
+            const extractedData = parseGojekText(text);
+
+            // Menampilkan data dalam tabel
+            for (const key in extractedData) {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${key}</td><td>${extractedData[key]}</td>`;
+                dataTableBody.appendChild(row);
+            }
+
+            statusDiv.textContent = 'Data berhasil diekstrak!';
+            resultContainer.style.display = 'block';
+
+        } catch (error) {
+            statusDiv.textContent = `Terjadi kesalahan saat memproses gambar: ${error.message}`;
+            statusDiv.classList.add('error');
+            console.error(error);
+        }
+    }
+    
+    // Fungsi untuk memilah teks menjadi data terstruktur
+    function parseGojekText(text) {
+        const data = {};
+
+        // Pola Regex untuk mengekstrak informasi
+        const idMatch = text.match(/ID Transaksi\s*(RB-\d+-\d+)/);
+        const tanggalMatch = text.match(/Selesai\s*\n\s*(.*?, \d+ \w+)/);
+        const jarakMatch = text.match(/Jarak\s*([\d.]+\s*km)/);
+        const pendapatanMatch = text.match(/Total pendapatan mitra\s*(Rp[\d.]+)/);
+        const waktuMatch = text.match(/(\d{2}:\d{2})\s*(\d{2}:\d{2})\s*(\d{2}:\d{2})/);
+        const alamatJemputMatch = text.match(/Titik jemput\s*\n\s*(.*?)(?=\n\s*Tujuan)/s);
+        const alamatTujuanMatch = text.match(/Tujuan\s*\n\s*(.*?)(?=\n\s*Jarak)/s);
+
+        if (idMatch) data['ID Transaksi'] = idMatch[1];
+        if (tanggalMatch) data['Tanggal Selesai'] = tanggalMatch[1].trim();
+        if (jarakMatch) data['Jarak'] = jarakMatch[1];
+        if (pendapatanMatch) data['Total Pendapatan'] = pendapatanMatch[1];
+        if (waktuMatch) {
+            data['Waktu Ditugaskan'] = waktuMatch[1];
+            data['Waktu Jemput'] = waktuMatch[2];
+            data['Waktu Selesai'] = waktuMatch[3];
+        }
+        if (alamatJemputMatch) data['Titik Jemput'] = alamatJemputMatch[1].replace(/\n/g, ' ').trim();
+        if (alamatTujuanMatch) data['Tujuan'] = alamatTujuanMatch[1].replace(/\n/g, ' ').trim();
+        
+        return data;
+    }
+</script>
+
+</body>
+</html>
