@@ -98,12 +98,12 @@
 
 <div class="container">
     <h1>Pembaca Orderan Gojek</h1>
-    <p>Unggah tangkapan layar orderan Gojek Anda untuk memprosesnya menjadi data tabel.</p>
+    <p>Unggah tangkapan layar orderan Gojek Anda untuk memprosesnya menjadi data tabel menggunakan Gemini.</p>
     
     <input type="file" id="imageInput" accept="image/*">
     <button id="processBtn" onclick="processImage()" disabled>Proses Gambar</button>
     
-    <div id="status" class="loading">Memuat model bahasa. Mohon tunggu...</div>
+    <div id="status" class="loading">Model siap. Silakan unggah gambar.</div>
     
     <div id="result-container">
         <h3>Hasil Ekstraksi Data</h3>
@@ -121,45 +121,27 @@
     </div>
 </div>
 
-<script src='https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js'></script>
 <script>
     const imageInput = document.getElementById('imageInput');
     const processBtn = document.getElementById('processBtn');
     const statusDiv = document.getElementById('status');
     const resultContainer = document.getElementById('result-container');
     const dataTableBody = document.querySelector('#dataTable tbody');
-    
-    let tesseractWorker = null;
 
-    // Load Tesseract worker on page load
-    const loadWorker = async () => {
-        try {
-            tesseractWorker = await Tesseract.createWorker({
-                logger: m => {
-                    if (m.status === 'downloading') {
-                        statusDiv.textContent = `Mengunduh model (${Math.round(m.progress * 100)}%)...`;
-                    } else if (m.status === 'loading') {
-                        statusDiv.textContent = `Memuat model (${Math.round(m.progress * 100)}%)...`;
-                    }
-                }
-            });
-            await tesseractWorker.loadLanguage('ind');
-            await tesseractWorker.initialize('ind');
-            
-            await tesseractWorker.setParameters({
-                tessedit_char_whitelist: '0123456789Rp.km-RBJld' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-            });
-            statusDiv.textContent = 'Model siap. Silakan unggah gambar.';
-            processBtn.disabled = false;
-        } catch (error) {
-            statusDiv.textContent = `Gagal memuat model: ${error.message}. Coba refresh halaman.`;
-            statusDiv.classList.add('error');
-            console.error(error);
-        }
-    };
-    
-    // Call the function on script execution
-    loadWorker();
+    // Aktifkan tombol saat file dipilih
+    imageInput.addEventListener('change', () => {
+        processBtn.disabled = !imageInput.files[0];
+    });
+
+    // Helper function to convert file to Base64
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = error => reject(error);
+            reader.readAsDataURL(file);
+        });
+    }
 
     async function processImage() {
         const file = imageInput.files[0];
@@ -168,44 +150,109 @@
             statusDiv.classList.add('error');
             return;
         }
-
-        if (!tesseractWorker) {
-            statusDiv.textContent = 'Model belum siap. Mohon tunggu.';
-            statusDiv.classList.add('error');
-            return;
-        }
         
         processBtn.disabled = true;
         resultContainer.style.display = 'none';
         dataTableBody.innerHTML = '';
         statusDiv.classList.remove('error');
-        statusDiv.textContent = 'Memproses gambar...';
+        statusDiv.textContent = 'Memproses gambar dengan Gemini...';
 
         try {
-            const { data: { text } } = await tesseractWorker.recognize(file);
+            const base64ImageData = await fileToBase64(file);
+            const prompt = `Ekstrak semua informasi penting dari tangkapan layar orderan Gojek ini. Pastikan Anda mendapatkan data untuk ID Transaksi, Tanggal Selesai, Waktu Ditugaskan, Waktu Jemput, Waktu Selesai, Jarak, Titik Jemput, Tujuan, Total Pendapatan Mitra, Pendapatan dari pelanggan, dan Potongan/biaya. Berikan hasilnya dalam format JSON yang terstruktur.`;
             
-            statusDiv.textContent = 'Pemrosesan selesai. Mengekstrak data...';
-            
-            console.log("Teks yang dihasilkan dari OCR:", text);
-
-            const extractedData = parseGojekText(text);
-
-            const dataKeys = Object.keys(extractedData);
-            if (dataKeys.length > 0) {
-                for (const key in extractedData) {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td>${key}</td><td>${extractedData[key]}</td>`;
-                    dataTableBody.appendChild(row);
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [
+                        { text: prompt },
+                        {
+                            inlineData: {
+                                mimeType: "image/jpeg",
+                                data: base64ImageData
+                            }
+                        }
+                    ]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "idTransaksi": { "type": "STRING" },
+                            "tanggalSelesai": { "type": "STRING" },
+                            "waktuDitugaskan": { "type": "STRING" },
+                            "waktuJemput": { "type": "STRING" },
+                            "waktuSelesai": { "type": "STRING" },
+                            "jarak": { "type": "STRING" },
+                            "titikJemput": { "type": "STRING" },
+                            "tujuan": { "type": "STRING" },
+                            "totalPendapatan": { "type": "STRING" },
+                            "pendapatanPelanggan": { "type": "STRING" },
+                            "potonganBiaya": { "type": "STRING" }
+                        }
+                    }
                 }
-                statusDiv.textContent = 'Data berhasil diekstrak!';
-            } else {
-                const row = document.createElement('tr');
-                row.innerHTML = `<td colspan="2" style="text-align: center;">Tidak ada data yang berhasil ditemukan.</td>`;
-                dataTableBody.appendChild(row);
-                statusDiv.textContent = 'Tidak ada data yang berhasil diekstrak. Mohon periksa kembali tangkapan layar.';
-            }
+            };
 
-            resultContainer.style.display = 'block';
+            const apiKey = ""; // Disediakan oleh Canvas
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                
+                const jsonText = result.candidates[0].content.parts[0].text;
+                const extractedData = JSON.parse(jsonText);
+
+                // Buat mapping untuk nama yang lebih mudah dibaca di tabel
+                const displayNames = {
+                    idTransaksi: 'ID Transaksi',
+                    tanggalSelesai: 'Tanggal Selesai',
+                    waktuDitugaskan: 'Waktu Ditugaskan',
+                    waktuJemput: 'Waktu Jemput',
+                    waktuSelesai: 'Waktu Selesai',
+                    jarak: 'Jarak',
+                    titikJemput: 'Titik Jemput',
+                    tujuan: 'Tujuan',
+                    totalPendapatan: 'Total Pendapatan Mitra',
+                    pendapatanPelanggan: 'Pendapatan dari Pelanggan',
+                    potonganBiaya: 'Potongan/Biaya'
+                };
+
+                let dataFound = false;
+                for (const key in extractedData) {
+                    if (extractedData[key]) {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `<td>${displayNames[key] || key}</td><td>${extractedData[key]}</td>`;
+                        dataTableBody.appendChild(row);
+                        dataFound = true;
+                    }
+                }
+
+                if (dataFound) {
+                    statusDiv.textContent = 'Data berhasil diekstrak!';
+                } else {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="2" style="text-align: center;">Tidak ada data yang berhasil ditemukan.</td>`;
+                    dataTableBody.appendChild(row);
+                    statusDiv.textContent = 'Tidak ada data yang berhasil diekstrak. Mohon coba gambar lain.';
+                }
+                
+                resultContainer.style.display = 'block';
+
+            } else {
+                statusDiv.textContent = 'Gagal mengekstrak data. Respons dari Gemini tidak valid.';
+                statusDiv.classList.add('error');
+            }
             
         } catch (error) {
             statusDiv.textContent = `Terjadi kesalahan saat memproses gambar: ${error.message}`;
@@ -214,46 +261,6 @@
         } finally {
             processBtn.disabled = false;
         }
-    }
-    
-    // Function to parse the text and extract structured data
-    function parseGojekText(text) {
-        const data = {};
-        
-        // Revised regular expressions for better flexibility
-        // Clean up the text by removing extra spaces
-        const cleanedText = text.replace(/\s+/g, ' ');
-
-        const idMatch = cleanedText.match(/ID Transaksi\s*[\s-]*([a-zA-Z0-9-]+)/i);
-        const tanggalMatch = cleanedText.match(/(Selesai|Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)\s*(\d+)\s*(\w+)/i);
-        const jarakMatch = cleanedText.match(/Jarak\s+([\d.,]+)\s*km/i);
-        const totalPendapatanMatch = cleanedText.match(/Total pendapatan mitra\s*(Rp[\d.,]+)/i);
-        const pendapatanPelangganMatch = cleanedText.match(/Pendapatan dari pelanggan\s*(Rp[\d.,]+)/i);
-        const potonganBiayaMatch = cleanedText.match(/Potongan\/?biaya\s*(Rp[\d.,]+)/i);
-        
-        const waktuDitugaskanMatch = cleanedText.match(/Ditugaskan\s*(\d{2}:\d{2})/i);
-        const waktuJemputMatch = cleanedText.match(/Jemput\s*(\d{2}:\d{2})/i);
-        const waktuSelesaiMatch = cleanedText.match(/Selesai\s*(\d{2}:\d{2})/i);
-        
-        // Flexible regex for addresses, looking for text between known labels
-        const alamatJemputMatch = text.match(/Titik\s*jemput\s*[\n\r]+(.*?)(?=\s*Tujuan)/is);
-        const alamatTujuanMatch = text.match(/Tujuan\s*[\n\r]+(.*?)(?=\s*Jarak)/is);
-        
-        if (idMatch) data['ID Transaksi'] = idMatch[1];
-        if (tanggalMatch) data['Tanggal Selesai'] = tanggalMatch[1] + ' ' + tanggalMatch[2] + ' ' + tanggalMatch[3];
-        if (jarakMatch) data['Jarak'] = jarakMatch[1] + ' km';
-        if (totalPendapatanMatch) data['Total Pendapatan Mitra'] = totalPendapatanMatch[1];
-        if (pendapatanPelangganMatch) data['Pendapatan dari Pelanggan'] = pendapatanPelangganMatch[1];
-        if (potonganBiayaMatch) data['Potongan/Biaya'] = potonganBiayaMatch[1];
-        if (waktuDitugaskanMatch) data['Waktu Ditugaskan'] = waktuDitugaskanMatch[1];
-        if (waktuJemputMatch) data['Waktu Jemput'] = waktuJemputMatch[1];
-        if (waktuSelesaiMatch) data['Waktu Selesai'] = waktuSelesaiMatch[1];
-        
-        // Clean up addresses from newlines
-        if (alamatJemputMatch) data['Titik Jemput'] = alamatJemputMatch[1].replace(/\n/g, ' ').trim();
-        if (alamatTujuanMatch) data['Tujuan'] = alamatTujuanMatch[1].replace(/\n/g, ' ').trim();
-        
-        return data;
     }
 </script>
 
