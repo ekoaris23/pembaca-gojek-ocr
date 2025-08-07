@@ -73,20 +73,13 @@
             color: #1a1a1a;
             margin-bottom: 10px;
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        th, td {
-            padding: 12px;
-            border: 1px solid #eee;
-            text-align: left;
-            font-size: 14px;
-        }
-        th {
+        #result-text {
+            white-space: pre-wrap;
             background-color: #fafafa;
-            font-weight: bold;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #eee;
+            line-height: 1.6;
         }
         .error {
             color: #d9534f;
@@ -98,7 +91,7 @@
 
 <div class="container">
     <h1>Pembaca Orderan Gojek</h1>
-    <p>Unggah tangkapan layar orderan Gojek Anda untuk memprosesnya menjadi data tabel menggunakan Gemini.</p>
+    <p>Unggah tangkapan layar orderan Gojek Anda untuk memprosesnya menjadi data teks menggunakan Gemini.</p>
     
     <input type="file" id="imageInput" accept="image/*">
     <button id="processBtn" onclick="processImage()" disabled>Proses Gambar</button>
@@ -107,17 +100,7 @@
     
     <div id="result-container">
         <h3>Hasil Ekstraksi Data</h3>
-        <table id="dataTable">
-            <thead>
-                <tr>
-                    <th>Informasi</th>
-                    <th>Detail</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Data akan diisi di sini oleh JavaScript -->
-            </tbody>
-        </table>
+        <pre id="result-text"></pre>
     </div>
 </div>
 
@@ -126,7 +109,7 @@
     const processBtn = document.getElementById('processBtn');
     const statusDiv = document.getElementById('status');
     const resultContainer = document.getElementById('result-container');
-    const dataTableBody = document.querySelector('#dataTable tbody');
+    const resultText = document.getElementById('result-text');
 
     // Aktifkan tombol saat file dipilih
     imageInput.addEventListener('change', () => {
@@ -153,33 +136,26 @@
         
         processBtn.disabled = true;
         resultContainer.style.display = 'none';
-        dataTableBody.innerHTML = '';
+        resultText.textContent = '';
         statusDiv.classList.remove('error');
         statusDiv.textContent = 'Memproses gambar dengan Gemini...';
 
         try {
             const base64ImageData = await fileToBase64(file);
-            const prompt = `Ekstrak semua informasi penting dari tangkapan layar orderan Gojek ini. Berikan hasilnya sebagai array JSON, di mana setiap objek berisi 'label' dan 'value'. Jika data tidak ditemukan, jangan sertakan objek tersebut.
-            
-            Contoh format:
-            [
-              {"label": "ID Transaksi", "value": "RB-1234567-8901234"},
-              {"label": "Tanggal Selesai", "value": "Selasa, 5 Agustus"},
-              ...
-            ]
-            
-            Informasi yang dibutuhkan:
-            - ID Transaksi
-            - Tanggal Selesai
-            - Waktu Ditugaskan
-            - Waktu Jemput
-            - Waktu Selesai
-            - Jarak
-            - Titik Jemput
-            - Tujuan
-            - Total Pendapatan Mitra
-            - Pendapatan dari Pelanggan
-            - Potongan/Biaya`;
+            // Prompt yang sangat sederhana untuk meminta data sebagai teks.
+            // Ini jauh lebih andal daripada JSON.
+            const prompt = `Ekstrak semua informasi penting dari tangkapan layar orderan Gojek ini. Sajikan informasi ini dalam format daftar sederhana, dengan setiap item pada baris baru. Contoh:
+            ID Transaksi: RB-1234567-8901234
+            Tanggal Selesai: Selasa, 5 Agustus
+            Titik Jemput: ...
+            Tujuan: ...
+            Waktu Ditugaskan: ...
+            Waktu Jemput: ...
+            Waktu Selesai: ...
+            Jarak: ...
+            Total pendapatan mitra: ...
+            Pendapatan dari pelanggan: ...
+            Potongan/biaya: ...`;
             
             const payload = {
                 contents: [{
@@ -193,20 +169,7 @@
                             }
                         }
                     ]
-                }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "ARRAY",
-                        items: {
-                            type: "OBJECT",
-                            properties: {
-                                "label": { "type": "STRING" },
-                                "value": { "type": "STRING", "nullable": true }
-                            }
-                        }
-                    }
-                }
+                }]
             };
 
             const apiKey = "";
@@ -224,22 +187,13 @@
                 result.candidates[0].content && result.candidates[0].content.parts &&
                 result.candidates[0].content.parts.length > 0) {
                 
-                const jsonText = result.candidates[0].content.parts[0].text;
-                const extractedData = JSON.parse(jsonText);
-
-                if (Array.isArray(extractedData) && extractedData.length > 0) {
-                    extractedData.forEach(item => {
-                        if (item.label && item.value) {
-                            const row = document.createElement('tr');
-                            row.innerHTML = `<td>${item.label}</td><td>${item.value}</td>`;
-                            dataTableBody.appendChild(row);
-                        }
-                    });
+                const responseText = result.candidates[0].content.parts[0].text;
+                
+                if (responseText.trim().length > 0) {
+                    resultText.textContent = responseText;
                     statusDiv.textContent = 'Data berhasil diekstrak!';
                 } else {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td colspan="2" style="text-align: center;">Tidak ada data yang berhasil ditemukan.</td>`;
-                    dataTableBody.appendChild(row);
+                    resultText.textContent = 'Tidak ada data yang berhasil ditemukan.';
                     statusDiv.textContent = 'Tidak ada data yang berhasil diekstrak. Mohon coba gambar lain.';
                 }
                 
