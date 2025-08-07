@@ -134,7 +134,8 @@
     // Load Tesseract worker on page load
     const loadWorker = async () => {
         try {
-            tesseractWorker = await Tesseract.createWorker('ind', 1, {
+            // Sintaks untuk Tesseract.js v4 yang benar
+            tesseractWorker = await Tesseract.createWorker({
                 logger: m => {
                     if (m.status === 'downloading') {
                         statusDiv.textContent = `Mengunduh model (${Math.round(m.progress * 100)}%)...`;
@@ -143,6 +144,9 @@
                     }
                 }
             });
+            await tesseractWorker.loadLanguage('ind');
+            await tesseractWorker.initialize('ind');
+            
             await tesseractWorker.setParameters({
                 tessedit_char_whitelist: '0123456789Rp.km-RBJld' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
             });
